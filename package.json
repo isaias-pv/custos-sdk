@@ -1,5 +1,5 @@
 {
-	"name": "@custos/sdk",
+	"name": "@isaias_pv/custos-sdk",
 	"version": "1.0.0",
 	"description": "Official JavaScript SDK for Custos authentication",
 	"main": "dist/index.cjs.js",
