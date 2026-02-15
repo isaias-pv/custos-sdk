@@ -3,7 +3,12 @@ export interface CustosConfig {
 	clientSecret?: string;
 	redirectUri: string;
 	apiUrl?: string;
-	scope?: string[];
+	scope?: string | string[];
+	responseType?: 'code' | 'token';
+	state?: string;
+	usePKCE?: boolean;
+	codeChallengeMethod?: 'S256' | 'plain';
+	grantType?: string;
 }
 
 export interface User {
@@ -28,9 +33,14 @@ export interface AuthState {
 	tokens: AuthTokens | null;
 }
 
-export type AuthEventType = 'login' | 'logout' | 'token-refresh' | 'error';
+export type AuthEventType = 'login' | 'logout' | 'token-refresh' | 'token-expired' | 'error';
 
 export interface AuthEvent {
 	type: AuthEventType;
 	data?: any;
+}
+
+export interface PKCETokens {
+	code_verifier: string;
+	code_challenge: string;
 }

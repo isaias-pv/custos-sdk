@@ -1,22 +1,36 @@
 import { CustosConfig, User, AuthState, AuthEvent, AuthEventType } from './types';
 import { Storage } from './storage';
 import { ApiClient } from './api';
-import { generateState, parseQueryString, isTokenExpired } from './utils';
+import {
+	generateState,
+	parseQueryString,
+	generateCodeVerifier,
+	generateCodeChallenge,
+	normalizeScope
+} from './utils';
 
 export class Custos {
 	private config: Required<CustosConfig>;
 	private storage: Storage;
 	private api: ApiClient;
 	private listeners: Map<AuthEventType, Set<(event: AuthEvent) => void>>;
-	private tokenIssuedAt: number | null = null;
+	private tokenExpiryTimer: any = null;
 
 	constructor(config: CustosConfig) {
+		// Normalize scope
+		const scope = normalizeScope(config.scope);
+
 		this.config = {
 			clientId: config.clientId,
 			clientSecret: config.clientSecret || '',
 			redirectUri: config.redirectUri,
 			apiUrl: config.apiUrl || 'https://custos.alimzen.com',
-			scope: config.scope || ['openid', 'profile', 'email'],
+			scope,
+			responseType: config.responseType || 'code',
+			state: config.state || generateState(),
+			usePKCE: config.usePKCE !== false, // Default to true
+			codeChallengeMethod: config.codeChallengeMethod || 'S256',
+			grantType: config.grantType || 'authorization_code',
 		};
 
 		this.storage = new Storage();
@@ -24,26 +38,41 @@ export class Custos {
 		this.listeners = new Map();
 
 		// Handle callback automatically
-		this.handleCallback();
-
-		// Setup token refresh
-		this.setupTokenRefresh();
+		if (typeof window !== 'undefined') {
+			this.handleCallback();
+			this.setupTokenExpiryMonitoring();
+		}
 	}
 
-	// Authentication Methods
-	async login(): Promise<void> {
-		const state = generateState();
+	// ==================== Authentication Methods ====================
+
+	async login(additionalParams?: Record<string, string>): Promise<void> {
+		const state = this.config.state;
 		this.storage.setState('oauth_state', state);
 
-		const params = new URLSearchParams({
-			response_type: 'code',
+		const params: Record<string, string> = {
+			response_type: this.config.responseType,
 			client_id: this.config.clientId,
 			redirect_uri: this.config.redirectUri,
-			scope: this.config.scope.join(' '),
+			scope: Array.isArray(this.config.scope) ? this.config.scope.join(' ') : this.config.scope,
 			state,
-		});
+			...additionalParams,
+		};
 
-		window.location.href = `${this.config.apiUrl}/oauth/authorize?${params}`;
+		// Add PKCE if enabled
+		if (this.config.usePKCE) {
+			const codeVerifier = generateCodeVerifier();
+			const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+			this.storage.setCodeVerifier(codeVerifier);
+			this.storage.setCodeChallenge(codeChallenge);
+
+			params.code_challenge = codeChallenge;
+			params.code_challenge_method = this.config.codeChallengeMethod;
+		}
+
+		const authUrl = `${this.config.apiUrl}/v1/auth/authorize?${new URLSearchParams(params)}`;
+		window.location.href = authUrl;
 	}
 
 	async logout(): Promise<void> {
@@ -57,49 +86,76 @@ export class Custos {
 			}
 		}
 
+		this.clearTokenExpiryTimer();
 		this.storage.clear();
 		this.emit('logout', null);
 	}
 
 	async handleCallback(): Promise<void> {
 		const params = parseQueryString(window.location.href);
-		const code = params.code;
-		const state = params.state;
 
+		// Check for errors
+		const error = params.error;
+		if (error) {
+			const errorDescription = params.error_description || error;
+			this.emit('error', { error, error_description: errorDescription });
+			throw new Error(errorDescription);
+		}
+
+		// Check for authorization code
+		const code = params.code;
 		if (!code) return;
 
+		// Validate state
+		const state = params.state;
 		const savedState = this.storage.getState('oauth_state');
 		if (state !== savedState) {
+			this.emit('error', { error: 'invalid_state', error_description: 'State parameter mismatch' });
 			throw new Error('Invalid state parameter');
 		}
 
 		this.storage.removeState('oauth_state');
 
 		try {
+			// Get code_verifier if using PKCE
+			const codeVerifier = this.config.usePKCE ? this.storage.getCodeVerifier() || undefined : undefined;
+
+			// Exchange code for tokens
 			const tokens = await this.api.exchangeCodeForTokens(
 				code,
 				this.config.clientId,
 				this.config.redirectUri,
+				codeVerifier,
 				this.config.clientSecret
 			);
 
-			this.tokenIssuedAt = Date.now();
 			this.storage.setTokens(tokens);
 
+			// Get user info
 			const user = await this.api.getUserInfo(tokens.accessToken);
 			this.storage.setUser(user);
 
+			// Clean up PKCE data
+			if (this.config.usePKCE) {
+				this.storage.removeCodeVerifier();
+				this.storage.removeCodeChallenge();
+			}
+
+			// Setup token expiry monitoring
+			this.setupTokenExpiryMonitoring();
+
 			this.emit('login', { user, tokens });
 
-			// Clean URL
-			window.history.replaceState({}, document.title, window.location.pathname);
+			// Clean URL (remove query params)
+			window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 		} catch (error) {
 			this.emit('error', error);
 			throw error;
 		}
 	}
 
-	// User Methods
+	// ==================== User Methods ====================
+
 	getUser(): User | null {
 		return this.storage.getUser();
 	}
@@ -108,8 +164,12 @@ export class Custos {
 		return this.storage.getTokens()?.accessToken || null;
 	}
 
+	getRefreshToken(): string | null {
+		return this.storage.getTokens()?.refreshToken || null;
+	}
+
 	isAuthenticated(): boolean {
-		return !!this.storage.getTokens() && !!this.storage.getUser();
+		return this.storage.hasValidToken() && !!this.storage.getUser();
 	}
 
 	getState(): AuthState {
@@ -120,20 +180,47 @@ export class Custos {
 		};
 	}
 
-	// Token Refresh
-	private setupTokenRefresh(): void {
-		setInterval(async () => {
-			if (this.shouldRefreshToken()) {
-				await this.refreshToken();
-			}
-		}, 60000); // Check every minute
+	async validateToken(): Promise<boolean> {
+		const accessToken = this.getAccessToken();
+		if (!accessToken) return false;
+
+		try {
+			return await this.api.validateToken(accessToken);
+		} catch {
+			return false;
+		}
 	}
 
-	private shouldRefreshToken(): boolean {
-		const tokens = this.storage.getTokens();
-		if (!tokens || !this.tokenIssuedAt) return false;
+	// ==================== Token Refresh ====================
 
-		return isTokenExpired(tokens.expiresIn, this.tokenIssuedAt);
+	private setupTokenExpiryMonitoring(): void {
+		this.clearTokenExpiryTimer();
+
+		const tokens = this.storage.getTokens();
+		const issuedAt = this.storage.getTokenIssuedAt();
+
+		if (!tokens || !issuedAt) return;
+
+		// Refresh 5 minutes before expiry
+		const timeUntilRefresh = (tokens.expiresIn - 300) * 1000; // 5 min buffer
+
+		if (timeUntilRefresh > 0) {
+			this.tokenExpiryTimer = setTimeout(async () => {
+				try {
+					await this.refreshToken();
+				} catch (error) {
+					this.emit('token-expired', error);
+					await this.logout();
+				}
+			}, timeUntilRefresh);
+		}
+	}
+
+	private clearTokenExpiryTimer(): void {
+		if (this.tokenExpiryTimer) {
+			clearTimeout(this.tokenExpiryTimer);
+			this.tokenExpiryTimer = null;
+		}
 	}
 
 	async refreshToken(): Promise<void> {
@@ -149,19 +236,17 @@ export class Custos {
 				this.config.clientSecret
 			);
 
-			this.tokenIssuedAt = Date.now();
 			this.storage.setTokens(newTokens);
-
+			this.setupTokenExpiryMonitoring();
 			this.emit('token-refresh', newTokens);
 		} catch (error) {
 			this.emit('error', error);
-			// If refresh fails, logout
-			await this.logout();
 			throw error;
 		}
 	}
 
-	// Event Handling
+	// ==================== Event Handling ====================
+
 	on(event: AuthEventType, callback: (event: AuthEvent) => void): void {
 		if (!this.listeners.has(event)) {
 			this.listeners.set(event, new Set());
@@ -176,5 +261,16 @@ export class Custos {
 	private emit(type: AuthEventType, data?: any): void {
 		const event: AuthEvent = { type, data };
 		this.listeners.get(type)?.forEach((callback) => callback(event));
+	}
+
+	// ==================== Utility Methods ====================
+
+	clearStorage(): void {
+		this.storage.clear();
+	}
+
+	destroy(): void {
+		this.clearTokenExpiryTimer();
+		this.listeners.clear();
 	}
 }
