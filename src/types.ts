@@ -9,6 +9,7 @@ export interface CustosConfig {
 	usePKCE?: boolean;
 	codeChallengeMethod?: 'S256' | 'plain';
 	grantType?: string;
+	useSessionStorage?: boolean; // Deprecated, use Storage class directly
 }
 
 export interface User {
