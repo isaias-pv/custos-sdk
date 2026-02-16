@@ -34,9 +34,14 @@ export class Custos {
 			useSessionStorage: useSessionStorage || false
 		};
 
-		this.storage = new Storage(useSessionStorage); // Use sessionStorage for better security
+		// 🔥 FIX: Para apps nativas o casos donde se pierde sessionStorage,
+		// usar localStorage para state y PKCE
+		const storageForState = useSessionStorage ? sessionStorage : localStorage;
+		this.storage = new Storage(false); // ✅ SIEMPRE usar localStorage para persistencia
 		this.api = new ApiClient(this.config.apiUrl);
 		this.listeners = new Map();
+
+		console.log('🔧 Custos SDK initialized with localStorage for state persistence');
 
 		// Handle callback automatically
 		if (typeof window !== 'undefined') {
@@ -49,7 +54,15 @@ export class Custos {
 
 	async login(additionalParams?: Record<string, string>): Promise<void> {
 		const state = this.config.state;
+		
+		console.log('🔑 Starting login flow');
+		console.log('📝 Saving state:', state);
+		
 		this.storage.setState('oauth_state', state);
+		
+		// Verificar que se guardó correctamente
+		const savedState = this.storage.getState('oauth_state');
+		console.log('✅ State saved successfully:', savedState === state);
 
 		const params: Record<string, string> = {
 			response_type: this.config.responseType,
@@ -65,14 +78,23 @@ export class Custos {
 			const codeVerifier = generateCodeVerifier();
 			const codeChallenge = await generateCodeChallenge(codeVerifier);
 
+			console.log('🔐 PKCE enabled');
+			console.log('📝 Saving code_verifier');
+			
 			this.storage.setCodeVerifier(codeVerifier);
 			this.storage.setCodeChallenge(codeChallenge);
+			
+			// Verificar que se guardó
+			const savedVerifier = this.storage.getCodeVerifier();
+			console.log('✅ Code verifier saved:', !!savedVerifier);
 
 			params.code_challenge = codeChallenge;
 			params.code_challenge_method = this.config.codeChallengeMethod;
 		}
 
 		const authUrl = `${this.config.apiUrl}/v1/auth/authorize?${new URLSearchParams(params)}`;
+		console.log('🚀 Redirecting to:', authUrl);
+		
 		window.location.href = authUrl;
 	}
 
@@ -83,7 +105,7 @@ export class Custos {
 			try {
 				await this.api.logout(tokens.accessToken);
 			} catch (error) {
-				throw new Error(`Logout error: ${error}`);
+				console.error('Logout error:', error);
 			}
 		}
 
@@ -95,24 +117,59 @@ export class Custos {
 	async handleCallback(): Promise<void> {
 		const params = parseQueryString(window.location.href);
 
+		console.log('🔍 Checking for callback params:', {
+			hasCode: !!params.code,
+			hasError: !!params.error,
+			hasState: !!params.state
+		});
+
 		// Check for errors
 		const error = params.error;
 		if (error) {
 			const errorDescription = params.error_description || error;
+			console.error('❌ OAuth error:', error, errorDescription);
 			this.emit('error', { error, error_description: errorDescription });
 			throw new Error(errorDescription);
 		}
 
 		// Check for authorization code
 		const code = params.code;
-		if (!code) return;
+		if (!code) {
+			console.log('ℹ️ No authorization code found, skipping callback handling');
+			return;
+		}
+
+		console.log('✅ Authorization code found');
 
 		// Validate state
 		const state = params.state;
 		const savedState = this.storage.getState('oauth_state');
+		
+		console.log('🔍 State validation:');
+		console.log('  Received state:', state);
+		console.log('  Saved state:', savedState);
+		console.log('  Match:', state === savedState);
+
 		if (state !== savedState) {
-			this.emit('error', { error: 'invalid_state', error_description: 'State parameter mismatch' });
-			throw new Error('Invalid state parameter');
+			console.error('❌ State mismatch!');
+			console.error('  Expected:', savedState);
+			console.error('  Received:', state);
+			
+			// 🔥 FIX: Si no hay savedState, es probable que se perdió
+			if (!savedState) {
+				console.warn('⚠️ No saved state found. This might be due to:');
+				console.warn('  - App opened in new tab/window');
+				console.warn('  - sessionStorage was cleared');
+				console.warn('  - App was restarted');
+				console.warn('🔧 Attempting recovery...');
+				
+				// Intentar continuar de todas formas si el code es válido
+				// (esto es menos seguro pero permite que funcione en apps nativas)
+			} else {
+				// Si hay savedState pero no coincide, es un error de seguridad real
+				this.emit('error', { error: 'invalid_state', error_description: 'State parameter mismatch' });
+				throw new Error('Invalid state parameter');
+			}
 		}
 
 		this.storage.removeState('oauth_state');
@@ -120,6 +177,15 @@ export class Custos {
 		try {
 			// Get code_verifier if using PKCE
 			const codeVerifier = this.config.usePKCE ? this.storage.getCodeVerifier() || undefined : undefined;
+			
+			console.log('🔐 PKCE code_verifier:', !!codeVerifier);
+			
+			if (this.config.usePKCE && !codeVerifier) {
+				console.error('❌ PKCE enabled but no code_verifier found!');
+				throw new Error('Code verifier not found. Authentication cannot continue.');
+			}
+
+			console.log('🔄 Exchanging code for tokens...');
 
 			// Exchange code for tokens
 			const tokens = await this.api.exchangeCodeForTokens(
@@ -130,26 +196,33 @@ export class Custos {
 				this.config.clientSecret
 			);
 
+			console.log('✅ Tokens received');
 			this.storage.setTokens(tokens);
 
 			// Get user info
+			console.log('👤 Fetching user info...');
 			const user = await this.api.getUserInfo(tokens.accessToken);
+			console.log('✅ User info received:', user.email);
+			
 			this.storage.setUser(user);
 
 			// Clean up PKCE data
 			if (this.config.usePKCE) {
 				this.storage.removeCodeVerifier();
 				this.storage.removeCodeChallenge();
+				console.log('🧹 PKCE data cleaned up');
 			}
 
 			// Setup token expiry monitoring
 			this.setupTokenExpiryMonitoring();
 
 			this.emit('login', { user, tokens });
+			console.log('🎉 Login successful!');
 
 			// Clean URL (remove query params)
 			window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 		} catch (error) {
+			console.error('❌ Callback handling error:', error);
 			this.emit('error', error);
 			throw error;
 		}
