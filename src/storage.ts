@@ -6,7 +6,8 @@ export class Storage {
 	private storage: globalThis.Storage;
 
 	constructor(useSessionStorage = false) {
-		this.storage = useSessionStorage ? sessionStorage : localStorage;
+		// this.storage = useSessionStorage ? sessionStorage : localStorage;
+		this.storage = localStorage; // Always use localStorage for better persistence
 	}
 
 	// Tokens
