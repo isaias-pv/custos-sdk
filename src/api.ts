@@ -60,7 +60,7 @@ export class ApiClient {
 	}
 
 	async getUserInfo(accessToken: string): Promise<User> {
-		const response = await fetch(`${this.baseUrl}/api/v1/auth/userinfo`, {
+		const response = await fetch(`${this.baseUrl}/api/v1/system/users/profile`, {
 			headers: {
 				Authorization: `Bearer ${accessToken}`,
 			},

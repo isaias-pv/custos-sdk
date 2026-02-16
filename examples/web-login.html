@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Custos SDK - Web Login</title>
+	<style>
+		body {
+			font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+			margin: 24px;
+		}
+
+		button {
+			padding: 10px 16px;
+			font-size: 16px;
+		}
+
+		pre {
+			background: #f6f6f6;
+			padding: 12px;
+			border-radius: 6px;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>Custos SDK - Web Login</h1>
+	<button id="login">Login</button>
+	<pre id="log"></pre>
+
+	<script src="../dist/index.umd.js"></script>
+	<script>
+		const logEl = document.getElementById('log');
+		const log = (msg) => { logEl.textContent += msg + '\n'; };
+
+		const auth = new window.Custos.Custos({
+			...window.Custos.defaultConfig,
+		});
+
+		auth.on('login', (event) => {
+			log('Login OK');
+			log(JSON.stringify(event.data, null, 2));
+		});
+
+		auth.on('error', (event) => {
+			log('Auth error');
+			log(JSON.stringify(event.data, null, 2));
+		});
+
+		document.getElementById('login').addEventListener('click', () => {
+			auth.login();
+		});
+	</script>
+</body>
+
+</html>
