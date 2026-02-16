@@ -40,12 +40,13 @@ export class Storage {
 	// State & PKCE
 	setState(key: string, value: string): void {
 		console.log(`Setting state: ${key} = ${value}`);
+		console.log(`storage_prefix: ${STORAGE_PREFIX}${key}`)
 		console.log(`Storage before setting state:`, this.storage);
 		this.storage.setItem(`${STORAGE_PREFIX}${key}`, value);
 	}
 
 	getState(key: string): string | null {
-		console.log(`Getting state: ${key}`);
+		console.log(`Getting state: ${key}`, `${STORAGE_PREFIX}${key}`);
 		console.log(`Storage before getting state:`, this.storage);
 		return this.storage.getItem(`${STORAGE_PREFIX}${key}`);
 	}
