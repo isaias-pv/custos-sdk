@@ -93,10 +93,12 @@ export class Custos {
 
 	async handleCallback(): Promise<void> {
 		const params = parseQueryString(window.location.href);
+		console.log('Callback params:', params);
 
 		// Check for errors
 		const error = params.error;
 		if (error) {
+			console.error('OAuth error:', error, params.error_description);
 			const errorDescription = params.error_description || error;
 			this.emit('error', { error, error_description: errorDescription });
 			throw new Error(errorDescription);
@@ -110,6 +112,7 @@ export class Custos {
 		const state = params.state;
 		const savedState = this.storage.getState('oauth_state');
 		if (state !== savedState) {
+			console.error('State parameter mismatch:', state, savedState);
 			this.emit('error', { error: 'invalid_state', error_description: 'State parameter mismatch' });
 			throw new Error('Invalid state parameter');
 		}
@@ -149,6 +152,7 @@ export class Custos {
 			// Clean URL (remove query params)
 			window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 		} catch (error) {
+			console.error('Callback handling error:', error);
 			this.emit('error', error);
 			throw error;
 		}
