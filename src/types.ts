@@ -1,3 +1,5 @@
+// ==================== Configuration ====================
+
 export interface CustosConfig {
 	clientId: string;
 	clientSecret?: string;
@@ -8,25 +10,32 @@ export interface CustosConfig {
 	state?: string;
 	usePKCE?: boolean;
 	codeChallengeMethod?: 'S256' | 'plain';
-	grantType?: string;
-	useSessionStorage?: boolean; // Deprecated, use Storage class directly
+	grantType?: 'authorization_code' | 'refresh_token' | 'client_credentials';
+	useSessionStorage?: boolean;
 }
+
+// ==================== Auth Tokens ====================
+
+export interface AuthTokens {
+	accessToken: string;
+	refreshToken?: string;
+	tokenType: string;
+	expiresIn: number;
+	scope?: string;
+}
+
+// ==================== User ====================
 
 export interface User {
 	id: string;
 	email: string;
 	name?: string;
 	picture?: string;
-	roles?: string[];
-	metadata?: Record<string, any>;
+	emailVerified?: boolean;
+	[key: string]: any;
 }
 
-export interface AuthTokens {
-	accessToken: string;
-	refreshToken?: string;
-	expiresIn: number;
-	tokenType: string;
-}
+// ==================== Auth State ====================
 
 export interface AuthState {
 	isAuthenticated: boolean;
@@ -34,14 +43,38 @@ export interface AuthState {
 	tokens: AuthTokens | null;
 }
 
-export type AuthEventType = 'login' | 'logout' | 'token-refresh' | 'token-expired' | 'error';
+// ==================== Events ====================
+
+export type AuthEventType =
+	| 'login'
+	| 'logout'
+	| 'error'
+	| 'token-refresh'
+	| 'token-expired';
 
 export interface AuthEvent {
 	type: AuthEventType;
 	data?: any;
 }
 
-export interface PKCETokens {
-	code_verifier: string;
-	code_challenge: string;
+// ==================== API Responses ====================
+
+export interface TokenResponse {
+	data: {
+		access_token: string;
+		refresh_token?: string;
+		token_type: string;
+		expires_in: number;
+		scope?: string;
+	};
+}
+
+export interface UserInfoResponse {
+	data: User;
+}
+
+export interface ErrorResponse {
+	error: string;
+	error_description?: string;
+	message?: string;
 }

@@ -6,7 +6,10 @@ export class Storage {
 	private storage: globalThis.Storage;
 
 	constructor(useSessionStorage = false) {
-		this.storage = useSessionStorage ? sessionStorage : localStorage;
+		// 🔥 FIX: Siempre usar localStorage
+		// sessionStorage se pierde en apps nativas cuando se cierra el navegador del sistema
+		this.storage = localStorage;
+		console.log('💾 Storage initialized: localStorage');
 	}
 
 	// Tokens
@@ -37,15 +40,22 @@ export class Storage {
 
 	// State & PKCE
 	setState(key: string, value: string): void {
-		this.storage.setItem(`${STORAGE_PREFIX}${key}`, value);
+		const fullKey = `${STORAGE_PREFIX}${key}`;
+		this.storage.setItem(fullKey, value);
+		console.log(`💾 Saved state: ${key}`);
 	}
 
 	getState(key: string): string | null {
-		return this.storage.getItem(`${STORAGE_PREFIX}${key}`);
+		const fullKey = `${STORAGE_PREFIX}${key}`;
+		const value = this.storage.getItem(fullKey);
+		console.log(`🔍 Retrieved state: ${key} =`, value ? 'found' : 'not found');
+		return value;
 	}
 
 	removeState(key: string): void {
-		this.storage.removeItem(`${STORAGE_PREFIX}${key}`);
+		const fullKey = `${STORAGE_PREFIX}${key}`;
+		this.storage.removeItem(fullKey);
+		console.log(`🗑️ Removed state: ${key}`);
 	}
 
 	// PKCE specific
@@ -81,6 +91,7 @@ export class Storage {
 		this.removeState('oauth_state');
 		this.removeCodeVerifier();
 		this.removeCodeChallenge();
+		console.log('🧹 Storage cleared');
 	}
 
 	// Validation

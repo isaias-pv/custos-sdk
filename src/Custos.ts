@@ -16,7 +16,7 @@ export class Custos {
 	private listeners: Map<AuthEventType, Set<(event: AuthEvent) => void>>;
 	private tokenExpiryTimer: any = null;
 
-	constructor({ useSessionStorage, ...config }: CustosConfig) {
+	constructor(config: CustosConfig) {
 		// Normalize scope
 		const scope = normalizeScope(config.scope);
 
@@ -31,38 +31,40 @@ export class Custos {
 			usePKCE: config.usePKCE !== false, // Default to true
 			codeChallengeMethod: config.codeChallengeMethod || 'S256',
 			grantType: config.grantType || 'authorization_code',
-			useSessionStorage: useSessionStorage || false
+			useSessionStorage: config.useSessionStorage || false // Default to localStorage
 		};
 
-		// 🔥 FIX: Para apps nativas o casos donde se pierde sessionStorage,
-		// usar localStorage para state y PKCE
-		const storageForState = useSessionStorage ? sessionStorage : localStorage;
-		this.storage = new Storage(false); // ✅ SIEMPRE usar localStorage para persistencia
+		// 🔥 FIX: Siempre usar localStorage para state y PKCE
+		// sessionStorage se pierde entre tabs/ventanas/recargas en apps nativas
+		this.storage = new Storage(false); // Siempre localStorage
 		this.api = new ApiClient(this.config.apiUrl);
 		this.listeners = new Map();
 
-		console.log('🔧 Custos SDK initialized with localStorage for state persistence');
+		console.log('🔧 Custos SDK initialized');
+		console.log('  Storage: localStorage (for state persistence)');
+		console.log('  PKCE:', this.config.usePKCE ? 'enabled' : 'disabled');
 
-		// Handle callback automatically
+		// 🔥 FIX: NO auto-manejar callback en constructor
+		// El callback debe ser manejado explícitamente por el desarrollador
+		// cuando ellos decidan (por ejemplo, en ngOnInit después de que el componente esté listo)
 		if (typeof window !== 'undefined') {
-			this.handleCallback();
 			this.setupTokenExpiryMonitoring();
 		}
 	}
 
 	// ==================== Authentication Methods ====================
 
+	/**
+	 * Inicia el flujo de autenticación OAuth 2.0 con PKCE
+	 * @param additionalParams Parámetros adicionales para la URL de autorización
+	 */
 	async login(additionalParams?: Record<string, string>): Promise<void> {
 		const state = this.config.state;
 		
 		console.log('🔑 Starting login flow');
-		console.log('📝 Saving state:', state);
+		console.log('  State:', state);
 		
 		this.storage.setState('oauth_state', state);
-		
-		// Verificar que se guardó correctamente
-		const savedState = this.storage.getState('oauth_state');
-		console.log('✅ State saved successfully:', savedState === state);
 
 		const params: Record<string, string> = {
 			response_type: this.config.responseType,
@@ -78,49 +80,37 @@ export class Custos {
 			const codeVerifier = generateCodeVerifier();
 			const codeChallenge = await generateCodeChallenge(codeVerifier);
 
-			console.log('🔐 PKCE enabled');
-			console.log('📝 Saving code_verifier');
+			console.log('🔐 PKCE enabled, saving code_verifier');
 			
 			this.storage.setCodeVerifier(codeVerifier);
 			this.storage.setCodeChallenge(codeChallenge);
-			
-			// Verificar que se guardó
-			const savedVerifier = this.storage.getCodeVerifier();
-			console.log('✅ Code verifier saved:', !!savedVerifier);
 
 			params.code_challenge = codeChallenge;
 			params.code_challenge_method = this.config.codeChallengeMethod;
 		}
 
 		const authUrl = `${this.config.apiUrl}/v1/auth/authorize?${new URLSearchParams(params)}`;
+		
 		console.log('🚀 Redirecting to:', authUrl);
+		console.log('  ✅ State saved in localStorage');
+		console.log('  ✅ Code verifier saved in localStorage');
 		
 		window.location.href = authUrl;
 	}
 
-	async logout(): Promise<void> {
-		const tokens = this.storage.getTokens();
-
-		if (tokens?.accessToken) {
-			try {
-				await this.api.logout(tokens.accessToken);
-			} catch (error) {
-				console.error('Logout error:', error);
-			}
-		}
-
-		this.clearTokenExpiryTimer();
-		this.storage.clear();
-		this.emit('logout', null);
-	}
-
+	/**
+	 * 🔥 NUEVO: Maneja el callback de OAuth explícitamente
+	 * Debe ser llamado por el desarrollador cuando detecten el código en la URL
+	 */
 	async handleCallback(): Promise<void> {
+		console.log('🔍 handleCallback() called');
+		
 		const params = parseQueryString(window.location.href);
 
-		console.log('🔍 Checking for callback params:', {
+		console.log('  Callback params:', {
 			hasCode: !!params.code,
-			hasError: !!params.error,
-			hasState: !!params.state
+			hasState: !!params.state,
+			hasError: !!params.error
 		});
 
 		// Check for errors
@@ -135,7 +125,7 @@ export class Custos {
 		// Check for authorization code
 		const code = params.code;
 		if (!code) {
-			console.log('ℹ️ No authorization code found, skipping callback handling');
+			console.log('ℹ️ No authorization code found, skipping callback');
 			return;
 		}
 
@@ -146,32 +136,41 @@ export class Custos {
 		const savedState = this.storage.getState('oauth_state');
 		
 		console.log('🔍 State validation:');
-		console.log('  Received state:', state);
-		console.log('  Saved state:', savedState);
+		console.log('  Received:', state);
+		console.log('  Saved:', savedState);
 		console.log('  Match:', state === savedState);
+
+		// 🔥 FIX: Manejar el caso donde no hay savedState
+		if (!savedState) {
+			console.warn('⚠️ No saved state found in storage');
+			console.warn('  This might happen if:');
+			console.warn('  - Storage was cleared');
+			console.warn('  - App was opened in a new tab/window');
+			console.warn('  - Using sessionStorage and session expired');
+			
+			// Emitir error pero con información útil
+			const errorMsg = 'No saved state found. Authentication session may have expired.';
+			this.emit('error', { 
+				error: 'state_not_found', 
+				error_description: errorMsg,
+				message: errorMsg
+			});
+			throw new Error(errorMsg);
+		}
 
 		if (state !== savedState) {
 			console.error('❌ State mismatch!');
 			console.error('  Expected:', savedState);
 			console.error('  Received:', state);
 			
-			// 🔥 FIX: Si no hay savedState, es probable que se perdió
-			if (!savedState) {
-				console.warn('⚠️ No saved state found. This might be due to:');
-				console.warn('  - App opened in new tab/window');
-				console.warn('  - sessionStorage was cleared');
-				console.warn('  - App was restarted');
-				console.warn('🔧 Attempting recovery...');
-				
-				// Intentar continuar de todas formas si el code es válido
-				// (esto es menos seguro pero permite que funcione en apps nativas)
-			} else {
-				// Si hay savedState pero no coincide, es un error de seguridad real
-				this.emit('error', { error: 'invalid_state', error_description: 'State parameter mismatch' });
-				throw new Error('Invalid state parameter');
-			}
+			this.emit('error', { 
+				error: 'invalid_state', 
+				error_description: 'State parameter mismatch' 
+			});
+			throw new Error('Invalid state parameter');
 		}
 
+		// Limpiar state usado
 		this.storage.removeState('oauth_state');
 
 		try {
@@ -182,7 +181,18 @@ export class Custos {
 			
 			if (this.config.usePKCE && !codeVerifier) {
 				console.error('❌ PKCE enabled but no code_verifier found!');
-				throw new Error('Code verifier not found. Authentication cannot continue.');
+				console.error('  This might happen if:');
+				console.error('  - Storage was cleared between login() and callback');
+				console.error('  - Using sessionStorage and session expired');
+				console.error('  - Different browser/tab was used');
+				
+				const errorMsg = 'Code verifier not found. Authentication cannot continue.';
+				this.emit('error', {
+					error: 'code_verifier_not_found',
+					error_description: errorMsg,
+					message: errorMsg
+				});
+				throw new Error(errorMsg);
 			}
 
 			console.log('🔄 Exchanging code for tokens...');
@@ -220,12 +230,30 @@ export class Custos {
 			console.log('🎉 Login successful!');
 
 			// Clean URL (remove query params)
-			window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+			if (typeof window !== 'undefined' && window.history) {
+				window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+			}
 		} catch (error) {
 			console.error('❌ Callback handling error:', error);
 			this.emit('error', error);
 			throw error;
 		}
+	}
+
+	async logout(): Promise<void> {
+		const tokens = this.storage.getTokens();
+
+		if (tokens?.accessToken) {
+			try {
+				await this.api.logout(tokens.accessToken);
+			} catch (error) {
+				console.error('Logout error:', error);
+			}
+		}
+
+		this.clearTokenExpiryTimer();
+		this.storage.clear();
+		this.emit('logout', null);
 	}
 
 	// ==================== User Methods ====================
@@ -346,5 +374,16 @@ export class Custos {
 	destroy(): void {
 		this.clearTokenExpiryTimer();
 		this.listeners.clear();
+	}
+
+	/**
+	 * 🔥 NUEVO: Helper para verificar si hay un callback pendiente
+	 * Útil para saber si debes llamar a handleCallback()
+	 */
+	hasCallbackParams(): boolean {
+		if (typeof window === 'undefined') return false;
+		
+		const params = parseQueryString(window.location.href);
+		return !!(params.code || params.error);
 	}
 }
