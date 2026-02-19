@@ -117,8 +117,7 @@ export class ApiClient {
 				},
 			});
 		} catch (error) {
-			// Ignorar errores de logout
-			console.warn('Logout request failed:', error);
+			throw error;
 		}
 	}
 
@@ -160,13 +159,9 @@ export class ApiClient {
 				: JSON.stringify(options.body),
 		};
 
-		console.log(`📡 API Request: ${options.method} ${url}`);
-
 		try {
 			const response = await fetch(url, requestOptions);
 			
-			console.log(`📡 API Response: ${response.status} ${response.statusText}`);
-
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({
 					error: 'unknown_error',
@@ -179,7 +174,6 @@ export class ApiClient {
 			const data = await response.json();
 			return data;
 		} catch (error) {
-			console.error(`❌ API Error: ${endpoint}`, error);
 			throw error;
 		}
 	}

@@ -40,10 +40,6 @@ export class Custos {
 		this.api = new ApiClient(this.config.apiUrl);
 		this.listeners = new Map();
 
-		console.log('🔧 Custos SDK initialized');
-		console.log('  Storage: localStorage (for state persistence)');
-		console.log('  PKCE:', this.config.usePKCE ? 'enabled' : 'disabled');
-
 		// 🔥 FIX: NO auto-manejar callback en constructor
 		// El callback debe ser manejado explícitamente por el desarrollador
 		// cuando ellos decidan (por ejemplo, en ngOnInit después de que el componente esté listo)
@@ -61,9 +57,6 @@ export class Custos {
 	async login(additionalParams?: Record<string, string>): Promise<void> {
 		const state = this.config.state;
 		
-		console.log('🔑 Starting login flow');
-		console.log('  State:', state);
-		
 		this.storage.setState('oauth_state', state);
 
 		const params: Record<string, string> = {
@@ -79,8 +72,6 @@ export class Custos {
 		if (this.config.usePKCE) {
 			const codeVerifier = generateCodeVerifier();
 			const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-			console.log('🔐 PKCE enabled, saving code_verifier');
 			
 			this.storage.setCodeVerifier(codeVerifier);
 			this.storage.setCodeChallenge(codeChallenge);
@@ -91,10 +82,6 @@ export class Custos {
 
 		const authUrl = `${this.config.apiUrl}/v1/auth/authorize?${new URLSearchParams(params)}`;
 		
-		console.log('🚀 Redirecting to:', authUrl);
-		console.log('  ✅ State saved in localStorage');
-		console.log('  ✅ Code verifier saved in localStorage');
-		
 		window.location.href = authUrl;
 	}
 
@@ -103,21 +90,11 @@ export class Custos {
 	 * Debe ser llamado por el desarrollador cuando detecten el código en la URL
 	 */
 	async handleCallback(): Promise<void> {
-		console.log('🔍 handleCallback() called');
-		
 		const params = parseQueryString(window.location.href);
-
-		console.log('  Callback params:', {
-			hasCode: !!params.code,
-			hasState: !!params.state,
-			hasError: !!params.error
-		});
-
 		// Check for errors
 		const error = params.error;
 		if (error) {
 			const errorDescription = params.error_description || error;
-			console.error('❌ OAuth error:', error, errorDescription);
 			this.emit('error', { error, error_description: errorDescription });
 			throw new Error(errorDescription);
 		}
@@ -125,29 +102,15 @@ export class Custos {
 		// Check for authorization code
 		const code = params.code;
 		if (!code) {
-			console.log('ℹ️ No authorization code found, skipping callback');
 			return;
 		}
-
-		console.log('✅ Authorization code found');
 
 		// Validate state
 		const state = params.state;
 		const savedState = this.storage.getState('oauth_state');
-		
-		console.log('🔍 State validation:');
-		console.log('  Received:', state);
-		console.log('  Saved:', savedState);
-		console.log('  Match:', state === savedState);
 
 		// 🔥 FIX: Manejar el caso donde no hay savedState
 		if (!savedState) {
-			console.warn('⚠️ No saved state found in storage');
-			console.warn('  This might happen if:');
-			console.warn('  - Storage was cleared');
-			console.warn('  - App was opened in a new tab/window');
-			console.warn('  - Using sessionStorage and session expired');
-			
 			// Emitir error pero con información útil
 			const errorMsg = 'No saved state found. Authentication session may have expired.';
 			this.emit('error', { 
@@ -159,10 +122,6 @@ export class Custos {
 		}
 
 		if (state !== savedState) {
-			console.error('❌ State mismatch!');
-			console.error('  Expected:', savedState);
-			console.error('  Received:', state);
-			
 			this.emit('error', { 
 				error: 'invalid_state', 
 				error_description: 'State parameter mismatch' 
@@ -177,15 +136,7 @@ export class Custos {
 			// Get code_verifier if using PKCE
 			const codeVerifier = this.config.usePKCE ? this.storage.getCodeVerifier() || undefined : undefined;
 			
-			console.log('🔐 PKCE code_verifier:', !!codeVerifier);
-			
 			if (this.config.usePKCE && !codeVerifier) {
-				console.error('❌ PKCE enabled but no code_verifier found!');
-				console.error('  This might happen if:');
-				console.error('  - Storage was cleared between login() and callback');
-				console.error('  - Using sessionStorage and session expired');
-				console.error('  - Different browser/tab was used');
-				
 				const errorMsg = 'Code verifier not found. Authentication cannot continue.';
 				this.emit('error', {
 					error: 'code_verifier_not_found',
@@ -194,8 +145,6 @@ export class Custos {
 				});
 				throw new Error(errorMsg);
 			}
-
-			console.log('🔄 Exchanging code for tokens...');
 
 			// Exchange code for tokens
 			const tokens = await this.api.exchangeCodeForTokens(
@@ -206,13 +155,10 @@ export class Custos {
 				this.config.clientSecret
 			);
 
-			console.log('✅ Tokens received');
 			this.storage.setTokens(tokens);
 
 			// Get user info
-			console.log('👤 Fetching user info...');
 			const user = await this.api.getUserInfo(tokens.accessToken);
-			console.log('✅ User info received:', user.email);
 			
 			this.storage.setUser(user);
 
@@ -220,21 +166,18 @@ export class Custos {
 			if (this.config.usePKCE) {
 				this.storage.removeCodeVerifier();
 				this.storage.removeCodeChallenge();
-				console.log('🧹 PKCE data cleaned up');
 			}
 
 			// Setup token expiry monitoring
 			this.setupTokenExpiryMonitoring();
 
 			this.emit('login', { user, tokens });
-			console.log('🎉 Login successful!');
 
 			// Clean URL (remove query params)
 			if (typeof window !== 'undefined' && window.history) {
 				window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
 			}
 		} catch (error) {
-			console.error('❌ Callback handling error:', error);
 			this.emit('error', error);
 			throw error;
 		}
@@ -247,7 +190,8 @@ export class Custos {
 			try {
 				await this.api.logout(tokens.accessToken);
 			} catch (error) {
-				console.error('Logout error:', error);
+				this.emit('error', error);
+				throw error;
 			}
 		}
 
