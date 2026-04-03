@@ -16,6 +16,7 @@ SDK oficial de JavaScript/TypeScript para autenticacion con Custos usando OAuth 
 - Utilidades exportadas
 - Storage interno
 - Endpoints usados por el SDK
+- Ejemplos por framework
 - Buenas practicas
 - Solucion de problemas
 
@@ -282,6 +283,13 @@ Notas:
 
 - El SDK soporta respuestas `204 No Content`.
 - Si la respuesta exitosa no es JSON, el request retorna `undefined`.
+
+## Ejemplos por framework
+
+- Angular: `examples/angular.md`
+- React: `examples/react.md`
+- Vue 3: `examples/vue.md`
+- Browser standalone: `examples/web-login.html`
 
 ## Buenas practicas
 
