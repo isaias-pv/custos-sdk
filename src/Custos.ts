@@ -34,9 +34,8 @@ export class Custos {
 			useSessionStorage: config.useSessionStorage || false // Default to localStorage
 		};
 
-		// 🔥 FIX: Siempre usar localStorage para state y PKCE
-		// sessionStorage se pierde entre tabs/ventanas/recargas en apps nativas
-		this.storage = new Storage(false); // Siempre localStorage
+		// Respetar configuración de storage; default: localStorage
+		this.storage = new Storage(this.config.useSessionStorage);
 		this.api = new ApiClient(this.config.apiUrl);
 		this.listeners = new Map();
 
@@ -189,9 +188,9 @@ export class Custos {
 		if (tokens?.accessToken) {
 			try {
 				await this.api.logout(tokens.accessToken);
-			} catch (error) {
-				this.emit('error', error);
-				throw error;
+			} catch {
+				// El fallo del servidor no debe impedir limpiar el estado local
+				// (ej: servidor caído, token ya expirado)
 			}
 		}
 
@@ -223,6 +222,7 @@ export class Custos {
 			isAuthenticated: this.isAuthenticated(),
 			user: this.getUser(),
 			tokens: this.storage.getTokens(),
+			tokenExpiry: this.getTokenExpiry(),
 		};
 	}
 
@@ -247,8 +247,10 @@ export class Custos {
 
 		if (!tokens || !issuedAt) return;
 
-		// Refresh 5 minutes before expiry
-		const timeUntilRefresh = (tokens.expiresIn - 300) * 1000; // 5 min buffer
+		// Calcular el tiempo restante correctamente, descontando el tiempo ya transcurrido
+		const now = Date.now();
+		const expiresAt = issuedAt + tokens.expiresIn * 1000;
+		const timeUntilRefresh = expiresAt - now - 5 * 60 * 1000; // 5 min antes de expirar
 
 		if (timeUntilRefresh > 0) {
 			this.tokenExpiryTimer = setTimeout(async () => {
@@ -259,6 +261,15 @@ export class Custos {
 					await this.logout();
 				}
 			}, timeUntilRefresh);
+		} else if (now < expiresAt) {
+			// Menos de 5 min para expirar: refrescar inmediatamente
+			setTimeout(async () => {
+				try {
+					await this.refreshToken();
+				} catch (error) {
+					this.emit('token-expired', error);
+				}
+			}, 0);
 		}
 	}
 
@@ -321,13 +332,53 @@ export class Custos {
 	}
 
 	/**
-	 * 🔥 NUEVO: Helper para verificar si hay un callback pendiente
-	 * Útil para saber si debes llamar a handleCallback()
+	 * Verifica si la URL actual contiene parámetros de callback OAuth (code o error).
+	 * Útil para saber si se debe invocar handleCallback().
 	 */
 	hasCallbackParams(): boolean {
 		if (typeof window === 'undefined') return false;
-		
 		const params = parseQueryString(window.location.href);
 		return !!(params.code || params.error);
+	}
+
+	/**
+	 * Retorna la fecha de expiración del access token actual, o null si no hay token.
+	 */
+	getTokenExpiry(): Date | null {
+		const tokens = this.storage.getTokens();
+		const issuedAt = this.storage.getTokenIssuedAt();
+		if (!tokens || !issuedAt) return null;
+		return new Date(issuedAt + tokens.expiresIn * 1000);
+	}
+
+	/**
+	 * Intenta restaurar la sesión silenciosamente al iniciar la app.
+	 * Si hay tokens válidos los mantiene; si están por expirar los refresca.
+	 * Retorna true si la sesión se restauró con éxito.
+	 */
+	async silentAuth(): Promise<boolean> {
+		if (!this.storage.hasValidToken()) {
+			return false;
+		}
+
+		const user = this.storage.getUser();
+		if (!user) return false;
+
+		// Verificar si el token está a menos de 5 min de expirar y refrescarlo
+		const expiry = this.getTokenExpiry();
+		if (expiry) {
+			const msUntilExpiry = expiry.getTime() - Date.now();
+			if (msUntilExpiry < 5 * 60 * 1000) {
+				try {
+					await this.refreshToken();
+				} catch {
+					this.storage.clear();
+					return false;
+				}
+			}
+		}
+
+		this.setupTokenExpiryMonitoring();
+		return true;
 	}
 }

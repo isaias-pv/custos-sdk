@@ -11,6 +11,7 @@ export interface CustosConfig {
 	usePKCE?: boolean;
 	codeChallengeMethod?: 'S256' | 'plain';
 	grantType?: 'authorization_code' | 'refresh_token' | 'client_credentials';
+	/** Usar sessionStorage en vez de localStorage. Default: false */
 	useSessionStorage?: boolean;
 }
 
@@ -29,9 +30,16 @@ export interface AuthTokens {
 export interface User {
 	id: string;
 	email: string;
+	username?: string;
 	name?: string;
+	firstName?: string;
+	lastName?: string;
 	picture?: string;
 	emailVerified?: boolean;
+	isVerified?: boolean;
+	isMfaEnabled?: boolean;
+	roles?: { tenantId: string; tenantSlug?: string; role: string }[];
+	permissions?: string[];
 	[key: string]: any;
 }
 
@@ -41,6 +49,7 @@ export interface AuthState {
 	isAuthenticated: boolean;
 	user: User | null;
 	tokens: AuthTokens | null;
+	tokenExpiry: Date | null;
 }
 
 // ==================== Events ====================
@@ -50,7 +59,8 @@ export type AuthEventType =
 	| 'logout'
 	| 'error'
 	| 'token-refresh'
-	| 'token-expired';
+	| 'token-expired'
+	| 'session-restored';
 
 export interface AuthEvent {
 	type: AuthEventType;

@@ -5,10 +5,20 @@ const STORAGE_PREFIX = 'custos_';
 export class Storage {
 	private storage: globalThis.Storage;
 
-	constructor() {
-		// 🔥 FIX: Siempre usar localStorage
-		// sessionStorage se pierde en apps nativas cuando se cierra el navegador del sistema
-		this.storage = localStorage;
+	constructor(useSessionStorage: boolean = false) {
+		if (typeof window === 'undefined') {
+			// SSR/Node.js: stub vacío para evitar errores en entornos sin window
+			this.storage = {
+				getItem: () => null,
+				setItem: () => {},
+				removeItem: () => {},
+				clear: () => {},
+				key: () => null,
+				length: 0,
+			} as globalThis.Storage;
+		} else {
+			this.storage = useSessionStorage ? window.sessionStorage : window.localStorage;
+		}
 	}
 
 	// Tokens
