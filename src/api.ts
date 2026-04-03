@@ -171,6 +171,15 @@ export class ApiClient {
 				throw new Error(errorData.error_description || errorData.message || response.statusText);
 			}
 
+			if (response.status === 204) {
+				return undefined as T;
+			}
+
+			const contentType = response.headers.get('content-type') || '';
+			if (!contentType.includes('application/json')) {
+				return undefined as T;
+			}
+
 			const data = await response.json();
 			return data;
 		} catch (error) {

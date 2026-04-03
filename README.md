@@ -1,375 +1,328 @@
-# @alim/custos
+# Custos SDK
 
-SDK de autenticación OAuth 2.0 + PKCE para Custos.
+SDK oficial de JavaScript/TypeScript para autenticacion con Custos usando OAuth 2.0 + PKCE.
 
-## 🚀 Instalación
+## Contenido
+
+- Instalacion
+- Requisitos
+- Exportaciones publicas
+- Inicio rapido
+- Flujo recomendado
+- Configuracion
+- API de Custos
+- Eventos
+- Tipos principales
+- Utilidades exportadas
+- Storage interno
+- Endpoints usados por el SDK
+- Buenas practicas
+- Solucion de problemas
+
+## Instalacion
 
 ```bash
-npm install @alim/custos
+npm install @isaias_pv/custos-sdk
 ```
 
-## ✨ Características
+## Requisitos
 
-- ✅ OAuth 2.0 con PKCE (Proof Key for Code Exchange)
-- ✅ Soporte para Web y Apps Nativas (Ionic/Capacitor)
-- ✅ Refresh automático de tokens
-- ✅ Sistema de eventos (login, logout, error, etc.)
-- ✅ TypeScript con tipos completos
-- ✅ Persistencia en localStorage (no sessionStorage)
-- ✅ Sin dependencias externas
+- Entorno browser moderno (usa Web Crypto API)
+- Backend Custos accesible desde el frontend
+- Aplicacion OAuth registrada con:
+  - client_id valido
+  - redirect_uri permitido
+  - PKCE habilitado (recomendado)
 
-## 📖 Uso Básico
+## Exportaciones publicas
 
-### 1. Inicialización
+El paquete exporta:
 
-```typescript
-import { Custos } from '@alim/custos';
+- `Custos`
+- `Storage`
+- `ApiClient`
+- Todos los tipos de `src/types.ts`
+- Todas las utilidades de `src/utils.ts`
+
+## Inicio rapido
+
+```ts
+import { Custos } from '@isaias_pv/custos-sdk';
 
 const auth = new Custos({
-  clientId: 'tu_client_id',
-  redirectUri: 'http://localhost:8100/auth/callback',
+  clientId: 'my-client-id',
+  redirectUri: window.location.origin + '/auth/callback',
   apiUrl: 'https://custos.alimzen.com',
   scope: 'openid profile email',
   usePKCE: true,
-  useSessionStorage: false // ⚠️ Siempre false para apps nativas
+  useSessionStorage: false,
 });
 ```
 
-### 2. Configurar Event Listeners
+### Login
 
-```typescript
-// Login exitoso
-auth.on('login', (event) => {
-  const { user, tokens } = event.data;
-  console.log('Usuario autenticado:', user);
-  console.log('Access Token:', tokens.accessToken);
-});
-
-// Error de autenticación
-auth.on('error', (event) => {
-  console.error('Error:', event.data);
-});
-
-// Token expirado
-auth.on('token-expired', () => {
-  console.log('Token expirado, redirigiendo a login...');
-});
-
-// Token actualizado (refresh automático)
-auth.on('token-refresh', (event) => {
-  console.log('Token actualizado:', event.data);
-});
-
-// Logout
-auth.on('logout', () => {
-  console.log('Usuario desconectado');
-});
+```ts
+await auth.login();
 ```
 
-### 3. Iniciar Login
+### Callback
 
-```typescript
-// Para apps web
-async function login() {
-  await auth.login();
-  // El usuario será redirigido a Custos
+```ts
+if (auth.hasCallbackParams()) {
+  await auth.handleCallback();
 }
 ```
 
-### 4. Manejar Callback
+### Recuperar sesion al iniciar app
 
-```typescript
-// En tu componente de callback (ej: /auth/callback)
-async function handleCallback() {
-  // Verificar si hay parámetros de callback
-  if (auth.hasCallbackParams()) {
-    await auth.handleCallback();
-    // El evento 'login' se disparará automáticamente
-  }
+```ts
+const restored = await auth.silentAuth();
+if (!restored) {
+  // mostrar vista de login
 }
 ```
 
-## 🔧 Uso en Angular/Ionic
+### Logout
 
-### Componente de Login
-
-```typescript
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Router, ActivatedRoute } from '@angular/router';
-import { Custos } from '@alim/custos';
-
-@Component({
-  selector: 'app-login',
-  templateUrl: './login.component.html'
-})
-export class LoginComponent implements OnInit, OnDestroy {
-  private auth: Custos;
-  isLoading = false;
-
-  constructor(
-    private router: Router,
-    private route: ActivatedRoute
-  ) {
-    this.auth = new Custos({
-      clientId: 'your_client_id',
-      redirectUri: 'http://localhost:8100/auth/callback',
-      apiUrl: 'https://custos.alimzen.com',
-      usePKCE: true
-    });
-
-    this.setupListeners();
-  }
-
-  ngOnInit() {
-    // Manejar callback de OAuth
-    this.route.queryParams.subscribe(async params => {
-      const code = params['code'];
-      const error = params['error'];
-
-      if (error) {
-        console.error('OAuth error:', params['error_description']);
-        return;
-      }
-
-      if (code) {
-        this.isLoading = true;
-        try {
-          await this.auth.handleCallback();
-        } catch (error) {
-          console.error('Callback error:', error);
-          this.isLoading = false;
-        }
-      }
-    });
-  }
-
-  ngOnDestroy() {
-    this.auth.destroy();
-  }
-
-  private setupListeners() {
-    this.auth.on('login', () => {
-      this.router.navigate(['/home']);
-    });
-
-    this.auth.on('error', (event) => {
-      console.error('Auth error:', event.data);
-      this.isLoading = false;
-    });
-  }
-
-  async login() {
-    this.isLoading = true;
-    await this.auth.login();
-  }
-
-  async logout() {
-    await this.auth.logout();
-  }
-}
+```ts
+await auth.logout();
 ```
 
-## 📱 Uso en Apps Nativas (Ionic/Capacitor)
+### Revocar tokens + limpiar sesion
 
-Para apps nativas, el flujo es ligeramente diferente debido al uso de deep linking:
-
-### 1. Configurar Deep Linking
-
-**capacitor.config.ts**
-```typescript
-const config: CapacitorConfig = {
-  appId: 'com.alim.myapp',
-  plugins: {
-    App: {}
-  },
-  android: {
-    intentFilters: [{
-      action: 'VIEW',
-      category: ['BROWSABLE', 'DEFAULT'],
-      data: [{ 
-        scheme: 'myapp', 
-        host: 'auth', 
-        pathPrefix: '/callback' 
-      }]
-    }]
-  }
-};
+```ts
+await auth.revoke({ accessToken: true, refreshToken: true });
 ```
 
-**iOS Info.plist**
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-  <dict>
-    <key>CFBundleURLSchemes</key>
-    <array><string>myapp</string></array>
-  </dict>
-</array>
-```
+## Flujo recomendado
 
-### 2. Componente de Login Nativo
+1. Crear instancia de `Custos` al iniciar app.
+2. Registrar listeners con `on(...)`.
+3. Al entrar a callback, verificar `hasCallbackParams()` y llamar `handleCallback()`.
+4. En arranque de app, llamar `silentAuth()` para restaurar sesion.
+5. Usar `getAccessToken()` para requests autenticados.
+6. Cerrar sesion con `logout()` o `revoke()`.
 
-```typescript
-import { Browser } from '@capacitor/browser';
+## Configuracion
 
-@Component({...})
-export class LoginComponent {
-  async loginNative() {
-    // Generar URL de autorización manualmente
-    const codeVerifier = this.generateCodeVerifier();
-    const codeChallenge = await this.generateCodeChallenge(codeVerifier);
-    const state = this.generateState();
+Interfaz `CustosConfig`:
 
-    // Guardar en localStorage
-    localStorage.setItem('custos_code_verifier', codeVerifier);
-    localStorage.setItem('custos_oauth_state', state);
+- `clientId: string` (requerido)
+- `redirectUri: string` (requerido)
+- `clientSecret?: string` (solo si tu flujo lo requiere)
+- `apiUrl?: string` default: `https://custos.alimzen.com`
+- `scope?: string | string[]` default: `openid profile`
+- `responseType?: 'code' | 'token'` default: `code`
+- `state?: string` default: generado aleatoriamente
+- `usePKCE?: boolean` default: `true`
+- `codeChallengeMethod?: 'S256' | 'plain'` default: `S256`
+- `grantType?: 'authorization_code' | 'refresh_token' | 'client_credentials'` default: `authorization_code`
+- `useSessionStorage?: boolean` default: `false` (usa localStorage)
 
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: 'your_client_id',
-      redirect_uri: 'myapp://auth/callback',
-      scope: 'openid profile',
-      state: state,
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256'
-    });
-
-    const authUrl = `https://custos.alimzen.com/v1/auth/authorize?${params}`;
-
-    // Abrir navegador del sistema
-    await Browser.open({
-      url: authUrl,
-      windowName: '_system'
-    });
-  }
-
-  // Helpers para PKCE
-  private generateCodeVerifier(): string {
-    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-    const length = 128;
-    let verifier = '';
-    for (let i = 0; i < length; i++) {
-      verifier += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
-    return verifier;
-  }
-
-  private async generateCodeChallenge(verifier: string): Promise<string> {
-    const data = new TextEncoder().encode(verifier);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    const bytes = new Uint8Array(digest);
-    const binary = Array.from(bytes, b => String.fromCharCode(b)).join('');
-    return btoa(binary)
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  }
-
-  private generateState(): string {
-    return Math.random().toString(36).substring(2, 15);
-  }
-}
-```
-
-## 🔑 API Completa
+## API de Custos
 
 ### Constructor
 
-```typescript
+```ts
 new Custos(config: CustosConfig)
 ```
 
-**CustosConfig:**
-- `clientId` (string, requerido): ID del cliente OAuth
-- `clientSecret` (string, opcional): Secret del cliente
-- `redirectUri` (string, requerido): URI de redirección
-- `apiUrl` (string, opcional): URL base de la API (default: 'https://custos.alimzen.com')
-- `scope` (string | string[], opcional): Scopes OAuth (default: 'openid profile')
-- `usePKCE` (boolean, opcional): Usar PKCE (default: true)
-- `useSessionStorage` (boolean, opcional): Usar sessionStorage en vez de localStorage (default: false, ⚠️ NO recomendado para apps nativas)
+### Metodos de autenticacion
 
-### Métodos
+```ts
+login(additionalParams?: Record<string, string>): Promise<void>
+handleCallback(): Promise<void>
+logout(): Promise<void>
+refreshToken(): Promise<void>
+revoke(options?: { accessToken?: boolean; refreshToken?: boolean }): Promise<void>
+silentAuth(): Promise<boolean>
+validateToken(): Promise<boolean>
+```
 
-#### `login(additionalParams?: Record<string, string>): Promise<void>`
-Inicia el flujo de autenticación OAuth.
+### Estado y usuario
 
-#### `handleCallback(): Promise<void>`
-Maneja el callback de OAuth. Debe ser llamado cuando detectes parámetros de callback en la URL.
+```ts
+isAuthenticated(): boolean
+getState(): AuthState
+getUser(): User | null
+getAccessToken(): string | null
+getRefreshToken(): string | null
+getTokenExpiry(): Date | null
+hasCallbackParams(): boolean
+```
 
-#### `logout(): Promise<void>`
-Cierra la sesión del usuario y limpia el storage.
+### Eventos
 
-#### `getUser(): User | null`
-Obtiene la información del usuario autenticado.
+```ts
+on(event: AuthEventType, callback: (event: AuthEvent) => void): void
+off(event: AuthEventType, callback: (event: AuthEvent) => void): void
+```
 
-#### `getAccessToken(): string | null`
-Obtiene el access token actual.
+### Utilidades de ciclo de vida
 
-#### `getRefreshToken(): string | null`
-Obtiene el refresh token actual.
+```ts
+clearStorage(): void
+destroy(): void
+```
 
-#### `isAuthenticated(): boolean`
-Verifica si hay un usuario autenticado.
+## Eventos
 
-#### `hasCallbackParams(): boolean`
-Verifica si hay parámetros de callback en la URL actual.
+`AuthEventType` soportados:
 
-#### `refreshToken(): Promise<void>`
-Refresca manualmente el access token.
+- `login`
+- `logout`
+- `error`
+- `token-refresh`
+- `token-expired`
+- `session-restored`
 
-#### `validateToken(): Promise<boolean>`
-Valida el access token actual contra el servidor.
+Ejemplo:
 
-#### `on(event: AuthEventType, callback: (event: AuthEvent) => void): void`
-Registra un listener para eventos de autenticación.
+```ts
+auth.on('login', (event) => {
+  console.log('Login:', event.data.user);
+});
 
-**Eventos disponibles:**
-- `login`: Se dispara cuando el usuario inicia sesión exitosamente
-- `logout`: Se dispara cuando el usuario cierra sesión
-- `error`: Se dispara cuando ocurre un error de autenticación
-- `token-refresh`: Se dispara cuando los tokens se actualizan
-- `token-expired`: Se dispara cuando el token expira
+auth.on('token-refresh', (event) => {
+  console.log('Nuevo token:', event.data.accessToken);
+});
 
-#### `off(event: AuthEventType, callback: (event: AuthEvent) => void): void`
-Remueve un listener de eventos.
+auth.on('session-restored', (event) => {
+  console.log('Sesion restaurada:', event.data.user);
+});
 
-#### `destroy(): void`
-Limpia los timers y listeners. Llama a este método cuando destruyas el componente.
+auth.on('error', (event) => {
+  console.error('Auth error:', event.data);
+});
+```
 
-## 🐛 Troubleshooting
+## Tipos principales
 
-### Error: "State parameter mismatch"
+### AuthTokens
 
-**Causa:** El `state` guardado en localStorage no coincide con el recibido.
+```ts
+interface AuthTokens {
+  accessToken: string;
+  refreshToken?: string;
+  tokenType: string;
+  expiresIn: number;
+  scope?: string;
+}
+```
 
-**Solución:**
-1. Asegúrate de que `useSessionStorage` sea `false`
-2. Verifica que no estés limpiando localStorage entre login y callback
-3. En apps nativas, asegúrate de que el deep link apunte al mismo dominio
+### User
 
-### Error: "Code verifier not found"
+```ts
+interface User {
+  id: string;
+  email: string;
+  username?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  picture?: string;
+  emailVerified?: boolean;
+  isVerified?: boolean;
+  isMfaEnabled?: boolean;
+  roles?: { tenantId: string; tenantSlug?: string; role: string }[];
+  permissions?: string[];
+  [key: string]: any;
+}
+```
 
-**Causa:** El `code_verifier` no se encuentra en localStorage cuando se procesa el callback.
+### AuthState
 
-**Solución:**
-1. Asegúrate de que `useSessionStorage` sea `false`
-2. En apps nativas, guarda el `code_verifier` manualmente antes de abrir el navegador
-3. Verifica que no estés limpiando localStorage
+```ts
+interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
+  tokens: AuthTokens | null;
+  tokenExpiry: Date | null;
+}
+```
 
-### Tokens no persisten entre recargas
+## Utilidades exportadas
 
-**Causa:** Usando `sessionStorage` en vez de `localStorage`.
+Desde `utils`:
 
-**Solución:** Configura `useSessionStorage: false` en el constructor.
+- `generateState(): string`
+- `generateCodeVerifier(): string`
+- `generateCodeChallenge(codeVerifier: string): Promise<string>`
+- `parseQueryString(url: string): Record<string, string>`
+- `normalizeScope(scope?: string | string[]): string`
+- `isValidUrl(url: string): boolean`
+- `normalizeUrl(url: string): string`
+- `isTokenExpired(token: string): boolean`
+- `decodeToken(token: string): any`
 
-## 📄 Licencia
+## Storage interno
+
+La clase `Storage` persiste con prefijo `custos_`:
+
+- `custos_tokens`
+- `custos_token_issued_at`
+- `custos_user`
+- `custos_oauth_state`
+- `custos_code_verifier`
+- `custos_code_challenge`
+
+Si `useSessionStorage` es `true`, usa `sessionStorage`; en caso contrario, `localStorage`.
+
+## Endpoints usados por el SDK
+
+`ApiClient` consume:
+
+- `POST /api/v1/auth/token` (code exchange + refresh)
+- `GET /api/v1/auth/validate`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/revoke`
+- `GET /api/v1/system/users/profile`
+
+Notas:
+
+- El SDK soporta respuestas `204 No Content`.
+- Si la respuesta exitosa no es JSON, el request retorna `undefined`.
+
+## Buenas practicas
+
+- Mantener `usePKCE: true`.
+- Usar `responseType: 'code'`.
+- Llamar `destroy()` al desmontar componentes/paginas.
+- Escuchar `token-expired` y `error` para manejo UX.
+- Usar `silentAuth()` en bootstrap de app para evitar flicker de login.
+
+## Solucion de problemas
+
+### Invalid state parameter
+
+Causas comunes:
+
+- Se perdio `custos_oauth_state` antes del callback.
+- Se abrio callback en otra pestana/sesion.
+- Se reutilizo un link viejo de callback.
+
+### Code verifier not found
+
+Causas comunes:
+
+- PKCE habilitado pero no se preservo `custos_code_verifier`.
+- Limpieza de storage antes de `handleCallback()`.
+
+### No refresh token available
+
+Causas comunes:
+
+- El servidor no devolvio refresh token.
+- El token fue limpiado o sobrescrito.
+
+### Login redirige pero no autentica
+
+Checklist:
+
+1. Verificar `redirectUri` exacto registrado en el backend.
+2. Confirmar que se llama `handleCallback()` solo en ruta callback.
+3. Revisar listener de `error` para detalle del fallo.
+
+## Licencia
 
 MIT
-
-## 🤝 Contribuir
-
-¿Encontraste un bug? ¿Tienes una sugerencia? Abre un issue en GitHub.
-
-## 📧 Soporte
-
-Para soporte, contacta a soporte@alimzen.com

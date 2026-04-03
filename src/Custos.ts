@@ -268,6 +268,7 @@ export class Custos {
 					await this.refreshToken();
 				} catch (error) {
 					this.emit('token-expired', error);
+					await this.logout();
 				}
 			}, 0);
 		}
@@ -300,6 +301,43 @@ export class Custos {
 			this.emit('error', error);
 			throw error;
 		}
+	}
+
+	/**
+	 * Revoca explícitamente access token y/o refresh token en el servidor,
+	 * y limpia el estado local independientemente del resultado remoto.
+	 */
+	async revoke(options: { accessToken?: boolean; refreshToken?: boolean } = { accessToken: true, refreshToken: true }): Promise<void> {
+		const tokens = this.storage.getTokens();
+		if (!tokens) {
+			this.clearTokenExpiryTimer();
+			this.storage.clear();
+			this.emit('logout', null);
+			return;
+		}
+
+		const shouldRevokeAccess = options.accessToken !== false;
+		const shouldRevokeRefresh = options.refreshToken !== false;
+
+		const revocations: Promise<void>[] = [];
+		if (shouldRevokeAccess && tokens.accessToken) {
+			revocations.push(this.api.revokeToken(tokens.accessToken, 'access_token'));
+		}
+		if (shouldRevokeRefresh && tokens.refreshToken) {
+			revocations.push(this.api.revokeToken(tokens.refreshToken, 'refresh_token'));
+		}
+
+		if (revocations.length > 0) {
+			try {
+				await Promise.allSettled(revocations);
+			} catch {
+				// Ignorar errores remotos; siempre limpiar sesión local
+			}
+		}
+
+		this.clearTokenExpiryTimer();
+		this.storage.clear();
+		this.emit('logout', null);
 	}
 
 	// ==================== Event Handling ====================
@@ -379,6 +417,7 @@ export class Custos {
 		}
 
 		this.setupTokenExpiryMonitoring();
+		this.emit('session-restored', { user: this.storage.getUser(), tokens: this.storage.getTokens() });
 		return true;
 	}
 }

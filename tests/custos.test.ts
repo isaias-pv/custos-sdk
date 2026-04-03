@@ -334,6 +334,57 @@ describe('Custos', () => {
 			localStorageMock.setItem('custos_user', JSON.stringify({ id: '1', email: 'a@b.com' }));
 			expect(await custos.silentAuth()).toBe(true);
 		});
+
+		it('emits session-restored when session is restored', async () => {
+			const custos = new Custos(baseConfig);
+			const handler = jest.fn();
+			custos.on('session-restored', handler);
+
+			localStorageMock.setItem('custos_tokens', JSON.stringify({ accessToken: 'at', tokenType: 'Bearer', expiresIn: 3600 }));
+			localStorageMock.setItem('custos_token_issued_at', Date.now().toString());
+			localStorageMock.setItem('custos_user', JSON.stringify({ id: '1', email: 'a@b.com' }));
+
+			await custos.silentAuth();
+
+			expect(handler).toHaveBeenCalledTimes(1);
+			expect(handler.mock.calls[0][0].type).toBe('session-restored');
+		});
+	});
+
+	describe('revoke()', () => {
+		it('revokes access and refresh tokens then clears local session', async () => {
+			const custos = new Custos(baseConfig);
+			localStorageMock.setItem('custos_tokens', JSON.stringify({ accessToken: 'at', refreshToken: 'rt', tokenType: 'Bearer', expiresIn: 3600 }));
+			localStorageMock.setItem('custos_token_issued_at', Date.now().toString());
+			localStorageMock.setItem('custos_user', JSON.stringify({ id: '1', email: 'a@b.com' }));
+
+			global.fetch = jest.fn().mockResolvedValue({
+				ok: true,
+				status: 204,
+				headers: { get: () => null },
+				json: async () => ({}),
+			});
+
+			await custos.revoke();
+
+			expect(global.fetch).toHaveBeenCalledTimes(2);
+			expect(localStorageMock.getItem('custos_tokens')).toBeNull();
+			expect(localStorageMock.getItem('custos_user')).toBeNull();
+		});
+
+		it('clears local session even when revoke endpoint fails', async () => {
+			const custos = new Custos(baseConfig);
+			localStorageMock.setItem('custos_tokens', JSON.stringify({ accessToken: 'at', refreshToken: 'rt', tokenType: 'Bearer', expiresIn: 3600 }));
+			localStorageMock.setItem('custos_token_issued_at', Date.now().toString());
+			localStorageMock.setItem('custos_user', JSON.stringify({ id: '1', email: 'a@b.com' }));
+
+			global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+			await custos.revoke();
+
+			expect(localStorageMock.getItem('custos_tokens')).toBeNull();
+			expect(localStorageMock.getItem('custos_user')).toBeNull();
+		});
 	});
 
 	describe('getTokenExpiry()', () => {
