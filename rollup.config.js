@@ -42,6 +42,19 @@ export default [
       production && terser(),
     ],
   },
+  // Server-side verification (Node): @isaias_pv/custos-sdk/server
+  {
+    input: 'src/server.ts',
+    external: ['jose'],
+    output: { file: 'dist/server.esm.js', format: 'es', sourcemap: true },
+    plugins: [resolve(), commonjs(), typescript({ tsconfig: './tsconfig.json' })],
+  },
+  {
+    input: 'src/server.ts',
+    external: ['jose'],
+    output: { file: 'dist/server.cjs.js', format: 'cjs', sourcemap: true },
+    plugins: [resolve(), commonjs(), typescript({ tsconfig: './tsconfig.json' })],
+  },
   // UMD build (for browsers)
   {
     input: 'src/index.ts',

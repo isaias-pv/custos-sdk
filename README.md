@@ -284,6 +284,25 @@ Notas:
 - El SDK soporta respuestas `204 No Content`.
 - Si la respuesta exitosa no es JSON, el request retorna `undefined`.
 
+## Verificar sesiones en tu backend (JWKS)
+
+Los access tokens se firman con RS256. Tu backend puede verificarlos sin compartir secretos usando la llave pública del servidor (`/.well-known/jwks.json`). Discovery OIDC disponible en `/.well-known/openid-configuration`.
+
+```ts
+import { createTokenVerifier, custosAuthMiddleware } from '@isaias_pv/custos-sdk/server';
+
+const verifier = createTokenVerifier({
+  issuer: 'https://clerk.auth.guruxy.com',
+  audience: 'mi-client-id', // opcional
+});
+const payload = await verifier.verify(token); // payload.sub, payload.email, ...
+
+// Express: expone el payload en req.auth
+app.use('/api', custosAuthMiddleware({ issuer: 'https://clerk.auth.guruxy.com' }));
+```
+
+Nota: verificar la firma comprueba integridad y expiración, no que la sesión siga activa en el servidor.
+
 ## Ejemplos por framework
 
 - Angular: `examples/angular.md`
