@@ -1,65 +1,53 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Custos SDK - Browser Example</title>
+  <title>Custos · ejemplo sin bundler</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; }
-    button { padding: 10px 14px; margin-right: 8px; }
-    pre { background: #f6f6f6; padding: 12px; border-radius: 6px; white-space: pre-wrap; }
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 640px; margin: 48px auto; padding: 0 16px; }
+    button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #d4d4d8; background: #fff; cursor: pointer; }
+    pre { background: #f4f4f5; padding: 12px; border-radius: 8px; overflow: auto; }
   </style>
 </head>
 <body>
-  <h1>Custos SDK - Browser Example</h1>
-  <button id="loginBtn">Login</button>
-  <button id="logoutBtn">Logout</button>
-  <pre id="log"></pre>
+  <h1>Custos</h1>
+  <p id="status">Cargando…</p>
+  <button id="login" hidden>Entrar</button>
+  <button id="logout" hidden>Salir</button>
+  <pre id="user" hidden></pre>
 
-  <script src="../dist/index.umd.js"></script>
+  <!-- Tras `pnpm build`; en producción: https://unpkg.com/@alimzen/custos/dist/custos.global.js -->
+  <script src="../packages/custos/dist/custos.global.js"></script>
   <script>
-    const logEl = document.getElementById('log');
-    const log = (msg, obj) => {
-      logEl.textContent += obj ? msg + '\n' + JSON.stringify(obj, null, 2) + '\n\n' : msg + '\n';
-    };
-
-    const auth = new window.Custos.Custos({
-      clientId: 'your-client-id',
-      redirectUri: window.location.origin + window.location.pathname,
-      apiUrl: 'https://custos.alimzen.com',
-      scope: 'openid profile email',
-      usePKCE: true,
-      useSessionStorage: false,
+    const custos = new Custos.Custos({
+      clientId: 'tu-client-id',
+      redirectUri: location.origin + location.pathname,
+      issuer: 'http://localhost:3000',
     });
 
-    auth.on('login', (event) => log('LOGIN OK', event.data));
-    auth.on('logout', () => log('LOGOUT OK'));
-    auth.on('session-restored', (event) => log('SESSION RESTORED', event.data));
-    auth.on('error', (event) => log('AUTH ERROR', event.data));
+    const $ = (id) => document.getElementById(id);
+    function render({ isAuthenticated, user }) {
+      $('status').textContent = isAuthenticated ? `Hola, ${user.name ?? user.email}` : 'Sin sesión';
+      $('login').hidden = isAuthenticated;
+      $('logout').hidden = !isAuthenticated;
+      $('user').hidden = !isAuthenticated;
+      $('user').textContent = JSON.stringify(user, null, 2);
+    }
+
+    custos.subscribe(render);
+    $('login').onclick = () => custos.login();
+    $('logout').onclick = () => custos.logout();
 
     (async () => {
-      const restored = await auth.silentAuth();
-      if (restored) {
-        log('Session restored at startup');
+      try {
+        if (custos.hasCallbackParams()) await custos.handleCallback();
+        else await custos.restore();
+      } catch (error) {
+        $('status').textContent = `Error (${error.code}): ${error.message}`;
       }
-
-      if (auth.hasCallbackParams()) {
-        try {
-          await auth.handleCallback();
-          log('Callback processed');
-        } catch (e) {
-          log('Callback error', { message: e.message });
-        }
-      }
+      render(custos.getState());
     })();
-
-    document.getElementById('loginBtn').addEventListener('click', async () => {
-      await auth.login();
-    });
-
-    document.getElementById('logoutBtn').addEventListener('click', async () => {
-      await auth.logout();
-    });
   </script>
 </body>
 </html>

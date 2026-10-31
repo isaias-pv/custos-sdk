@@ -1,0 +1,72 @@
+{
+  "name": "@alimzen/custos-angular",
+  "version": "0.1.0",
+  "description": "Angular integration for Custos: provideCustos(), signals, a route guard and an HTTP interceptor.",
+  "license": "MIT",
+  "author": "Alimzen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alimzen/custos.git",
+    "directory": "packages/custos-angular"
+  },
+  "homepage": "https://github.com/Alimzen/custos/tree/main/packages/custos-angular#readme",
+  "bugs": {
+    "url": "https://github.com/Alimzen/custos/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@alimzen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "custos",
+    "angular",
+    "oauth",
+    "pkce",
+    "guard",
+    "interceptor",
+    "signals"
+  ],
+  "peerDependencies": {
+    "@alimzen/custos": ">=0.1.0 <1.0.0",
+    "@angular/common": ">=19.0.0",
+    "@angular/core": ">=19.0.0",
+    "@angular/router": ">=19.0.0",
+    "rxjs": "^7.4.0"
+  },
+  "devDependencies": {
+    "@alimzen/custos": "workspace:^",
+    "@angular/common": "^20.3.0",
+    "@angular/compiler": "^20.3.0",
+    "@angular/core": "^20.3.0",
+    "@angular/platform-browser": "^20.3.0",
+    "@angular/router": "^20.3.0",
+    "rxjs": "^7.8.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  }
+}

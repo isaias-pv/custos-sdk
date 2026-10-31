@@ -1,0 +1,73 @@
+{
+  "name": "@alimzen/custos",
+  "version": "0.1.0",
+  "description": "Browser SDK for Custos: OAuth 2.0 + PKCE login, token refresh across tabs, and an authenticated fetch.",
+  "license": "MIT",
+  "author": "Alimzen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alimzen/custos.git",
+    "directory": "packages/custos"
+  },
+  "homepage": "https://github.com/Alimzen/custos/tree/main/packages/custos#readme",
+  "bugs": {
+    "url": "https://github.com/Alimzen/custos/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/custos.global.js",
+  "jsdelivr": "./dist/custos.global.js",
+  "exports": {
+    ".": {
+      "@alimzen/source": "./src/index.ts",
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./global": "./dist/custos.global.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "custos",
+    "oauth",
+    "oauth2",
+    "pkce",
+    "oidc",
+    "authentication",
+    "sso"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      },
+      "./global": "./dist/custos.global.js",
+      "./package.json": "./package.json"
+    }
+  }
+}
